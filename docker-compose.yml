@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=copecompanion_dev
+      - POSTGRES_USER=copecompanion
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - copecompanion-network
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7-jammy
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=copecompanion
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=copecompanion_dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - copecompanion-network
+
+volumes:
+  postgres_data:
+  mongodb_data:
+
+networks:
+  copecompanion-network:
+    driver: bridge

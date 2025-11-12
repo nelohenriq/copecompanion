@@ -1,0 +1,439 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User management models
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  password      String? // For credentials provider
+
+  // Authentication
+  accounts Account[]
+  sessions Session[]
+
+  // API Keys
+  apiKeys ApiKey[]
+
+  // Profile
+  profile UserProfile?
+
+  // Crisis assessments
+  crisisAssessments CrisisAssessment[]
+
+  // Personalization
+  preferences            UserPreferences?
+  contentRecommendations ContentRecommendation[]
+
+  // Content management
+  authoredContent     Content[]
+  contentAccess       ContentAccess[]
+  contentInteractions UserContentInteraction[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Mental health preferences
+  timezone String?
+  language String? @default("en")
+  theme    String? @default("system") // light, dark, system
+
+  // Privacy settings
+  dataSharing Boolean @default(false)
+  analytics   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_profiles")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// API Key management models
+model ApiKey {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Key details
+  name         String
+  provider     String // openai, anthropic, google
+  encryptedKey String // AES-256 encrypted
+
+  // Usage tracking
+  usageCount   Int       @default(0)
+  lastUsed     DateTime?
+  monthlyUsage Int       @default(0) // Reset monthly
+  usageLimit   Int? // Optional monthly limit
+
+  // Status
+  isActive  Boolean   @default(true)
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@map("api_keys")
+}
+
+// Chat conversation models
+model Conversation {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title        String   @default("New Conversation")
+  lastActivity DateTime @default(now())
+
+  messages          Message[]
+  crisisAssessments CrisisAssessment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role    String // 'user' or 'assistant'
+  content String @db.Text
+
+  timestamp DateTime @default(now())
+
+  @@map("messages")
+}
+
+// Crisis detection models
+model CrisisAssessment {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  riskLevel          String // 'low', 'medium', 'high'
+  indicators         Json // CrisisIndicator[]
+  overallScore       Float
+  recommendedActions String[]
+
+  flaggedAt   DateTime  @default(now())
+  reviewed    Boolean   @default(false)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+
+  escalated       Boolean   @default(false)
+  escalationLevel String?
+  escalationNotes String?
+  escalatedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("crisis_assessments")
+}
+
+// Personalization models
+model UserPreferences {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Communication preferences
+  tone               String? // 'formal', 'casual', 'supportive', 'direct'
+  communicationStyle String? // 'concise', 'detailed', 'empathetic'
+
+  // Topic preferences
+  preferredTopics String[] // Array of preferred conversation topics
+  avoidedTopics   String[] // Array of topics to avoid
+
+  // Personalization settings
+  personalizationEnabled Boolean @default(true)
+  dataSharingConsent     Boolean @default(false)
+
+  // AI learning data
+  conversationPatterns Json? // Stored patterns from conversation analysis
+  interactionHistory   Json? // Historical interaction data
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+model ContentRecommendation {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Link to actual content (optional)
+  contentId String?
+  content   Content? @relation(fields: [contentId], references: [id])
+
+  // Recommendation details
+  contentType String // 'article', 'exercise', 'resource', 'topic'
+  title       String
+  description String?
+  url         String?
+  tags        String[]
+
+  // Relevance scoring
+  relevanceScore Float
+  confidence     Float
+
+  // Tracking
+  viewed       Boolean   @default(false)
+  interacted   Boolean   @default(false)
+  viewedAt     DateTime?
+  interactedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_recommendations")
+}
+
+// Content Management models
+model Content {
+ id          String   @id @default(cuid())
+ title       String
+ slug        String   @unique // URL-friendly identifier
+ description String?  @db.Text
+
+ // Content body
+ content     String?  @db.Text // For text-based content
+ contentUrl  String? // For external content or file URLs
+
+ // Content type and categorization
+ contentType    String // 'article', 'exercise', 'video', 'audio', 'assessment', 'resource'
+ category       String[] // Array of categories
+ tags           String[] // Array of tags for search
+ targetAudience String[] // 'general', 'professionals', 'patients', 'caregivers'
+
+ // Metadata
+ authorId    String?
+ author      User?     @relation(fields: [authorId], references: [id])
+ readingTime Int? // Estimated reading time in minutes
+ difficulty  String? // 'beginner', 'intermediate', 'advanced'
+ language    String   @default("en")
+
+ // Status and workflow
+ status        String   @default("draft") // 'draft', 'pending_review', 'published', 'archived'
+ publishedAt   DateTime?
+ archivedAt    DateTime?
+
+ // Access control
+ accessLevel   String   @default("public") // 'public', 'authenticated', 'professional'
+ requiresAuth  Boolean  @default(false)
+
+ // SEO and discoverability
+ seoTitle       String?
+ seoDescription String?
+ seoKeywords    String[]
+
+ // Versioning
+ version       Int      @default(1)
+ previousVersion String?
+
+ // Relationships
+ recommendations ContentRecommendation[]
+ review          ContentReview?
+
+ // Audit
+ createdBy String
+ updatedBy String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+
+ @@map("content")
+}
+
+// Content versioning for tracking changes
+model ContentVersion {
+ id        String @id @default(cuid())
+ contentId String
+ content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+ version   Int
+ title     String
+ content   String? @db.Text
+ changes   String? // Description of what changed
+
+ createdBy String
+ createdAt DateTime @default(now())
+
+ @@unique([contentId, version])
+ @@map("content_versions")
+}
+
+// Content access logs for analytics
+model ContentAccess {
+ id        String @id @default(cuid())
+ contentId String
+ content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+ userId    String?
+ user      User? @relation(fields: [userId], references: [id])
+
+ action    String // 'view', 'like', 'share', 'complete', 'bookmark'
+ duration  Int? // Time spent in seconds (for view actions)
+
+ ipAddress String?
+ userAgent String?
+
+ createdAt DateTime @default(now())
+
+ @@map("content_access")
+}
+
+// User content interactions
+model UserContentInteraction {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contentId String
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  interactionType String // 'viewed', 'liked', 'bookmarked', 'completed', 'shared'
+  rating          Int? // 1-5 star rating
+
+  notes     String? // User notes or feedback
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, contentId, interactionType])
+  @@map("user_content_interactions")
+}
+
+// Content review workflow
+model ContentReview {
+  id          String @id @default(cuid())
+  contentId   String @unique
+  content     Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  status      String @default("pending") // 'pending', 'in_review', 'approved', 'rejected', 'needs_revision'
+  priority    String @default("normal") // 'low', 'normal', 'high', 'urgent'
+
+  // Submission details
+  submittedBy   String
+  submittedAt   DateTime @default(now())
+  submissionNotes String?
+
+  // Assignment
+  assignedTo    String?
+  assignedAt    DateTime?
+  assignedBy    String?
+
+  // Review details
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  reviewNotes   String?
+  reviewScore   Int? // 1-10 quality score
+
+  // Quality checklist
+  qualityChecks Json? // Completed quality checklist items
+
+  // Revision tracking
+  revisionRequested Boolean @default(false)
+  revisionNotes     String?
+  revisionDeadline  DateTime?
+
+  // Final decision
+  finalDecision   String? // 'approved', 'rejected', 'archived'
+  decisionNotes   String?
+  decidedAt       DateTime?
+  decidedBy       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_reviews")
+}
+
+// Content quality checklist template
+model ContentQualityChecklist {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String?
+
+  // Checklist items
+  items       Json // Array of checklist items with criteria
+
+  // Applicability
+  contentTypes String[] // Which content types this applies to
+  requiredFor  String[] // Which statuses require this checklist
+
+  isActive    Boolean @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("content_quality_checklists")
+}
+
